@@ -1,0 +1,21 @@
+[
+    {
+        "Testbench1":{
+            "hostname":"localhost",
+            "login_name":"user1",
+            "children":{
+                "Sub1":{
+                    "name":"Testbench1_Subbench1",
+                    "login_name":"user2"
+                }
+            }
+        },
+        "Testbench2":{
+            "hostname":"TB2",
+            "login_name":"user1"
+        },
+        "TB3":{
+            "login_name":"user1"
+        }
+    }
+]
