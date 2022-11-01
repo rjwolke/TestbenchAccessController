@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Tuple
-from lib.Controller import DataBaseController
-from lib.Testbench import Testbench
+from taco.Controller import DataBaseController
+from taco.Testbench import Testbench
 
 
 class TestbenchAccessController():

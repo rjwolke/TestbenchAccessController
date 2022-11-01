@@ -152,3 +152,7 @@ cython_debug/
 #.idea/
 tk_test.py
 test.py
+testing/clear_db.py
+testing/test.db
+testing/testbenches.json
+testing/testbenches2.json

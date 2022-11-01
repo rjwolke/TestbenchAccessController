@@ -1,10 +1,9 @@
-import json
 import sys
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from datetime import datetime, timedelta
 
-from lib.Testbench import Testbench
+from taco.Testbench import Testbench
 from TACo import TestbenchAccessController
 
 
@@ -18,8 +17,8 @@ class TACo_GUI(tk.Tk):
     def __init__(self):
         super().__init__()
         
-        self.taco = TestbenchAccessController("test.db")
-        self.taco.load_testbench_JSON("testbenches.json")
+        self.taco = TestbenchAccessController("testing/test.db")
+        self.taco.load_testbench_JSON("testing/testbenches.json")
         
         self.user = tk.StringVar(value = 'Testuser')
         
@@ -120,11 +119,13 @@ class TACo_GUI(tk.Tk):
             bgcolor = self.COLOR_TREEVIEW_POPUP_FREE
 
             lock_user, locked_since = self.taco.get_lock(self.popup.testbench.name)
+            lock_delta = datetime.now()-locked_since                            # Calculate Deltatime
+            lock_delta -= timedelta(microseconds = lock_delta.microseconds)     # Remove microseconds
             if lock_user:
                 bgcolor = self.COLOR_TREEVIEW_POPUP_LOCKED                          # Set BGColor
-                lock_delta = datetime.now()-locked_since                            # Calculate Deltatime
-                lock_delta -= timedelta(microseconds = lock_delta.microseconds)     # Remove microseconds
                 headerlines.append(f'Locked by {lock_user} since {lock_delta}')
+            else:
+                headerlines.append(f'Free since {lock_delta}')
                 
             self.popup.insert_separator(0)
             for i, line in enumerate(headerlines):
