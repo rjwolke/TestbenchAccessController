@@ -17,12 +17,19 @@ class TACo_GUI(tk.Tk):
     def __init__(self):
         super().__init__()
         
-        self.taco = TestbenchAccessController("testing/test.db")
-        self.taco.load_testbench_JSON("testing/testbenches.json")
-        
-        self.user = tk.StringVar(value = 'Testuser')
+        self.taco = TestbenchAccessController()
+        self.user = tk.StringVar(value = self.taco.username)
         
         self.draw_GUI()
+        
+        # Load Database if not present
+        if self.taco.databaseController is None:
+            self.set_database_file()
+        
+        # Load Testbench Config
+        if not self.taco.testbenches:
+            self.load_testbench_json()
+
         self.mainloop()
 
 
@@ -39,8 +46,8 @@ class TACo_GUI(tk.Tk):
         filemenu = tk.Menu(menubar, tearoff=0)
         
         menubar.add_cascade(label="File", menu=filemenu)
-        filemenu.add_command(label="Load Testbench-Config", command=self.load_json)
-        filemenu.add_command(label="Set Database", command=self.set_database_file)
+        filemenu.add_command(label="Load Testbench-Config", command=self.load_testbench_json)
+        filemenu.add_command(label="Select Database", command=self.set_database_file)
         filemenu.add_separator()
         filemenu.add_command(label="Quit", command=lambda:sys.exit(0))
 
@@ -54,6 +61,7 @@ class TACo_GUI(tk.Tk):
         
         label = tk.Label(frame, text='Username')
         entry = tk.Entry(frame, textvariable=self.user)
+        entry.bind('<FocusOut>', self.set_username)
         
         label.pack(side=tk.LEFT)
         entry.pack(side=tk.RIGHT, fill=tk.X, expand=True)
@@ -62,7 +70,9 @@ class TACo_GUI(tk.Tk):
                 
 
     def draw_testbench_treeview(self):
-                
+        """
+        Function for drawing the testbench treeview with scrollbar
+        """
         style = ttk.Style()
         style.theme_use('vista')
         style.configure("Treeview", foreground=self.COLOR_TREEVIEW_ITEM_FREE)
@@ -70,21 +80,19 @@ class TACo_GUI(tk.Tk):
         frame = tk.Frame(self)
 
         # Create Treeview
-        treeScroll = ttk.Scrollbar(frame)
-        treeScroll.pack(side=tk.RIGHT, fill=tk.BOTH)
-        
         self.tree = ttk.Treeview(frame, columns=['User'], show="tree", selectmode="browse")
-        self.tree.column("#0", minwidth=80, width=180)
         self.tree.heading("#0", text="Testbench")
-        # self.tree.heading("Hostname", text="Hostname")
-        # self.tree.column("Hostname", minwidth=30)
         self.tree.heading("User", text="User")
+        self.tree.column("#0", minwidth=80, width=180)
         self.tree.column("User", minwidth=30, width=120)
         
         self.tree.tag_configure("locked", foreground=self.COLOR_TREEVIEW_ITEM_LOCKED)
 
+        treeScroll = ttk.Scrollbar(frame)
         treeScroll.configure(command=self.tree.yview)
         self.tree.configure(yscrollcommand=treeScroll.set)
+
+        treeScroll.pack(side=tk.RIGHT, fill=tk.BOTH)
         self.tree.pack(fill=tk.BOTH, expand=True)
         frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
 
@@ -92,53 +100,73 @@ class TACo_GUI(tk.Tk):
 
 
         def show_context_menu(event):
-            '''
-                Display the context menu for the treeview item
-            '''
+            """
+            Display the context menu for the treeview item
+            """
             
             # Create Menu
-            self.popup = tk.Menu(self, tearoff=0)
-            self.popup.add_command(label="Remote Desktop", command=self.run_rdp)
-            self.popup.add_separator()
-            self.popup.add_command(label="Set Lock", command=self.lock_testbench)
-            self.popup.add_command(label="Remove Lock", command=self.unlock_testbench)
+            self.contextmenu = tk.Menu(self, tearoff=0)
+            self.contextmenu.add_command(label="Remote Desktop", command=self.run_rdp)
+            self.contextmenu.add_separator()
+            self.contextmenu.add_command(label="Set Lock", command=self.lock_testbench)
+            self.contextmenu.add_command(label="Remove Lock", command=self.unlock_testbench)
 
             selected_row = self.tree.identify_row(event.y)
             try:
-                self.popup.testbench = self.taco.get_testbench_by_name(selected_row)
+                self.selected_testbench = self.taco.get_testbench_by_name(selected_row)
             except ValueError:
                 # Only show popup on testbenches
                 return               
 
             self.tree.selection_set(selected_row)   # Update Selection
-            self.update_testbench(self.popup.testbench.name)
+            self.update_testbench(self.selected_testbench.name)
 
             # Popup-Header
             headerlines = []
-            headerlines.append(f'{self.popup.testbench.name} ({self.popup.testbench.hostname})')
+            headerlines.append(f'{self.selected_testbench.name} ({self.selected_testbench.hostname})')
             bgcolor = self.COLOR_TREEVIEW_POPUP_FREE
 
-            lock_user, locked_since = self.taco.get_lock(self.popup.testbench.name)
-            lock_delta = datetime.now()-locked_since                            # Calculate Deltatime
-            lock_delta -= timedelta(microseconds = lock_delta.microseconds)     # Remove microseconds
-            if lock_user:
-                bgcolor = self.COLOR_TREEVIEW_POPUP_LOCKED                          # Set BGColor
-                headerlines.append(f'Locked by {lock_user} since {lock_delta}')
-            else:
-                headerlines.append(f'Free since {lock_delta}')
+            lock_user, locked_since = self.taco.get_lock(self.selected_testbench.name)
+            def get_lock_time_string(deltatime):
+                days = deltatime.days
+                hours, remainder = divmod(deltatime.seconds, 3600)
+                minutes, seconds = divmod(remainder, 60)
                 
-            self.popup.insert_separator(0)
+                lock_str = f'{minutes:02d}m{seconds:02d}s'
+                if hours or days: lock_str = f'{hours:02d}h' + lock_str
+                if days: lock_str = f'{days}d' + lock_str
+                return lock_str
+                
+            lock_str = get_lock_time_string(datetime.now()-locked_since)        # Calculate Deltatime
+            if lock_user:
+                bgcolor = self.COLOR_TREEVIEW_POPUP_LOCKED                      # Set BGColor
+                headerlines.append(f'Locked by {lock_user} for {lock_str}')
+            else:
+                headerlines.append(f'Free for {lock_str}')
+                
+            self.contextmenu.insert_separator(0)
             for i, line in enumerate(headerlines):
-                self.popup.insert_command(i, label=line, command=lambda:show_context_menu(event), background=bgcolor)
+                self.contextmenu.insert_command(i, label=line, command=lambda:show_context_menu(event), background=bgcolor)
 
+
+            # Post popup
             try:
-                # Post
-                self.popup.post(event.x_root, event.y_root)
+                self.contextmenu.post(event.x_root, event.y_root)
             finally:
                 # make sure to release the grab (Tk 8.0a1 only)
-                self.popup.grab_release()
+                self.contextmenu.grab_release()
+                
+        def run_rdp(event):
+            selected_row = self.tree.identify_row(event.y)
+            try:
+                self.selected_testbench = self.taco.get_testbench_by_name(selected_row)
+            except ValueError:
+                # Only show popup on testbenches
+                return
+            self.run_rdp()
 
         self.tree.bind("<Button-3>", show_context_menu)
+        self.tree.bind("<Double-Button-1>", run_rdp)
         
         
     def update_testbench(self, name, parent = ""):
@@ -169,38 +197,47 @@ class TACo_GUI(tk.Tk):
         
     def run_rdp(self):
         self.lock_testbench()
-        self.popup.testbench.run_rdp()
+        self.selected_testbench.run_rdp()
 
     
     def lock_testbench(self):
-        self.taco.set_lock(self.popup.testbench.name, self.user.get())
-        self.update_testbench(self.popup.testbench.name)
+        self.taco.set_lock(self.selected_testbench.name)
+        self.update_testbench(self.selected_testbench.name)
     
 
     def unlock_testbench(self):
-        self.taco.unset_lock(self.popup.testbench.name)
-        self.update_testbench(self.popup.testbench.name)
+        self.taco.unset_lock(self.selected_testbench.name)
+        self.update_testbench(self.selected_testbench.name)
         
         
     def set_database_file(self):
-        dbfile = filedialog.askopenfilename(filetypes=[('sqlite database', 'db')])
+        # Save Dialog to allow for the creation of a new Database
+        dbfile = filedialog.asksaveasfilename(title='Select Database File', defaultextension='db', filetypes=[('sqlite database', '.db'), ('All Files', '*')], confirmoverwrite=False)    
         if not dbfile:
             return
 
-        old_dbfile = self.taco.databaseController.dbFile        
+        old_dbfile = self.taco.databaseFile
         result, err = self.taco.set_database(dbfile)
         if not result:
+            # Revert to previous database
             messagebox.showerror('Error loading Database', f'Failed to load database located at {dbfile}: {err}')
             self.taco.set_database(old_dbfile)
-
-
-    def load_json(self):
-        jsonfile = filedialog.askopenfilename(filetypes=[('Testbench Structure', 'json')])
-        if not jsonfile:
+            
+        self.update_testbench_treeview()
+            
+            
+    def load_testbench_json(self):
+        jsonfile = filedialog.askopenfilename(title='Select Testbench Config JSON', filetypes=[('Testbench Config', '.json'), ('All Files', '*')])
+        if not jsonfile: 
             return
         
         self.taco.load_testbench_JSON(jsonfile)
-        self.update_testbench_treeview(True)
+        self.update_testbench_treeview(clear = True)
+        
+        
+    def set_username(self, *args):
+        self.taco.set_username(self.user.get())
+        self.taco.save_settings()
 
         
 if __name__ == '__main__':
